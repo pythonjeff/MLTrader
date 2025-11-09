@@ -1,0 +1,23 @@
+# Environment and virtualenvs
+.env
+venv/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.so
+
+# IDE/editor
+.DS_Store
+.vscode/
+.idea/
+
+# Data outputs
+data/raw/
+data/processed/
+data/cache/
+logs/
+
+# Notebooks and checkpoints
+.ipynb_checkpoints/
+

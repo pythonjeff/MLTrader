@@ -1,0 +1,51 @@
+# =========================
+# API Clients
+# =========================
+alpaca-py==0.43.1              # Full Python 3.12 support (latest stable)
+coinbase-advanced-py==1.8.2
+
+# =========================
+# Data & Analysis
+# =========================
+pandas==2.3.3
+numpy==2.2.6
+pandas-ta-classic==0.3.36
+
+# =========================
+# Database
+# =========================
+SQLAlchemy==2.0.36
+python-dotenv==1.0.1
+
+# =========================
+# Logging & Monitoring
+# =========================
+loguru==0.7.3
+
+# =========================
+# Async Support
+# =========================
+aiohttp==3.10.8
+asyncio==3.4.3                 # stdlib helper (fine to keep pinned)
+
+# =========================
+# Notifications (optional)
+# =========================
+discord-webhook==1.3.1
+
+# =========================
+# Backtesting & Research
+# =========================
+backtrader==1.9.78.123
+
+# =========================
+# Dashboard / Visualization
+# =========================
+streamlit==1.39.0
+plotly==5.24.1
+
+# Machine Learning
+scikit-learn==1.4.2
+joblib==1.4.2
+
+openai>=1.50.0
