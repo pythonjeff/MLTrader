@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -15,6 +15,8 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
 
 DATA_DIR = Path("data/processed")
 MODEL_DIR = Path("models")
@@ -46,38 +48,55 @@ def load_preprocessed_splits() -> Dict[str, pd.DataFrame | pd.Series]:
 class EarningsSignalModel:
     """Binary classifier predicting 10-day direction for earnings events."""
 
-    model: LogisticRegression = field(
-        default_factory=lambda: LogisticRegression(
-            max_iter=2000,
-            class_weight="balanced",
-            solver="lbfgs",
+    model: SGDClassifier = field(
+        default_factory=lambda: SGDClassifier(
+            loss="log_loss",
+            penalty="l2",
+            alpha=0.0001,
+            max_iter=1000,
+            tol=1e-3,
+            n_jobs=-1,
+            random_state=42,
         )
     )
     feature_columns: Optional[List[str]] = None
+    scaler: Optional[StandardScaler] = None
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> None:
         logging.info("Fitting logistic regression on %s samples.", len(X))
-        self.feature_columns = X.columns.tolist()
-        self.model.fit(X, y)
+        # Remove highly collinear features with abs correlation > 0.95
+        corr_matrix = X.corr().abs()
+        upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        to_drop = [column for column in upper.columns if any(upper[column] > 0.95)]
+        X_reduced = X.drop(columns=to_drop)
+        self.feature_columns = X_reduced.columns.tolist()
+
+        self.scaler = StandardScaler()
+        X_scaled = self.scaler.fit_transform(X_reduced)
+
+        self.model.fit(X_scaled, y)
         logging.info("Model fit complete.")
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         X_aligned = X[self.feature_columns]
-        return self.model.predict(X_aligned)
+        X_scaled = self.scaler.transform(X_aligned)
+        return self.model.predict(X_scaled)
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         X_aligned = X[self.feature_columns]
-        return self.model.predict_proba(X_aligned)
+        X_scaled = self.scaler.transform(X_aligned)
+        return self.model.predict_proba(X_scaled)
 
     def decision_function(self, X: pd.DataFrame) -> np.ndarray:
         X_aligned = X[self.feature_columns]
-        return self.model.decision_function(X_aligned)
+        X_scaled = self.scaler.transform(X_aligned)
+        return self.model.decision_function(X_scaled)
 
     def save(self, path: Path) -> None:
         logging.info("Saving signal model to %s", path)
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
-            {"model": self.model, "feature_columns": self.feature_columns},
+            {"model": self.model, "feature_columns": self.feature_columns, "scaler": self.scaler},
             path,
         )
         logging.info("Model saved.")
@@ -88,6 +107,7 @@ class EarningsSignalModel:
         instance = cls()
         instance.model = payload["model"]
         instance.feature_columns = payload["feature_columns"]
+        instance.scaler = payload.get("scaler", None)
         logging.info("Loaded model from %s", path)
         return instance
 
@@ -144,11 +164,18 @@ def evaluate_model(model: EarningsSignalModel, X_test: pd.DataFrame, y_test: pd.
 
 
 def cross_validate_baseline(X: pd.DataFrame, y: pd.Series, folds: int = 5) -> List[float]:
-    logging.info("Running %s-fold time-series cross-validation (ROC-AUC).", folds)
-    estimator = LogisticRegression(
-        max_iter=2000,
-        class_weight="balanced",
-        solver="lbfgs",
+    logging.info("Running %s-fold time-series cross-validation (ROC-AUC) with scaling and saga solver.", folds)
+    estimator = make_pipeline(
+        StandardScaler(),
+        SGDClassifier(
+            loss="log_loss",
+            penalty="l2",
+            alpha=0.0001,
+            max_iter=1000,
+            tol=1e-3,
+            n_jobs=-1,
+            random_state=42,
+        )
     )
     cv = TimeSeriesSplit(n_splits=folds)
     scores = cross_val_score(estimator, X, y, cv=cv, scoring="roc_auc", n_jobs=1)
@@ -194,11 +221,10 @@ def train_and_evaluate(
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-    logging.info("Starting earnings signal model training.")
+    logging.info("Starting signal classification model training.")
     summary = train_and_evaluate()
     logging.info("Training complete. Metrics: %s", summary["metrics"])
 
 
 if __name__ == "__main__":
     main()
-
